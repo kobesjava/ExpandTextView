@@ -12,10 +12,11 @@ import android.view.MotionEvent
 import android.view.View
 import com.jaki.expand.R
 import com.jaki.expand.extension.dp2px
+import com.jaki.expand.span.JExpandSpan
 
 class JExpandTextView @JvmOverloads constructor(
         context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
-) : View(context, attrs, defStyleAttr), View.OnClickListener {
+) : View(context, attrs, defStyleAttr) {
 
     private val paint = Paint()
     private val textPaint = TextPaint()
@@ -23,8 +24,8 @@ class JExpandTextView @JvmOverloads constructor(
 
     private var content: CharSequence = ""
     private var ssBuilder: SpannableStringBuilder? = null
-    private var endText = ""
-    private var limnitLine: Int = 0
+    private var expandText = "展开"
+    private var limitLine: Int = 0
     private var lineCount = 0
     private var lineStartIndex = 0
     private var lineEndIndex = 0
@@ -43,8 +44,6 @@ class JExpandTextView @JvmOverloads constructor(
         appendPaint.color = getContext().getColor(R.color.color_5187ff)
         appendPaint.textSize = 16.dp2px().toFloat()
         appendPaint.typeface = Typeface.DEFAULT_BOLD
-
-        setOnClickListener(this)
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -52,12 +51,12 @@ class JExpandTextView @JvmOverloads constructor(
             val staticLayout1 = StaticLayout(content, textPaint, MeasureSpec.getSize(widthMeasureSpec), Layout.Alignment.ALIGN_NORMAL, 1f, 5.dp2px().toFloat(), true)
             lineCount = staticLayout1.lineCount
             val mHeight: Int
-            if (lineCount <= limnitLine || limnitLine <= 0) {
+            if (lineCount <= limitLine || limitLine <= 0) {
                 mHeight = staticLayout1.height
             } else {
-                mHeight = staticLayout1.getLineBottom(limnitLine - 1)
-                lineStartIndex = staticLayout1.getLineStart(limnitLine - 1)
-                lineEndIndex = staticLayout1.getLineEnd(limnitLine - 1)
+                mHeight = staticLayout1.getLineBottom(limitLine - 1)
+                lineStartIndex = staticLayout1.getLineStart(limitLine - 1)
+                lineEndIndex = staticLayout1.getLineEnd(limitLine - 1)
             }
             setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), mHeight)
         } else {
@@ -65,20 +64,22 @@ class JExpandTextView @JvmOverloads constructor(
         }
     }
 
-    fun setData(limnitLine: Int, content: CharSequence?, endText: String?) {
-        this.limnitLine = limnitLine
+    fun setData(limitLine: Int, content: CharSequence?, expandText: String? = null) {
+        this.limitLine = limitLine
         this.content = content ?: ""
-        this.endText = endText ?: ""
+        expandText?.let {
+            this.expandText = it
+        }
         requestLayout()
     }
 
     override fun onDraw(canvas: Canvas) {
         var drawText = content
-        if (limnitLine in 1 until lineCount) {
+        if (limitLine in 1 until lineCount) {
             val line2DrawText = drawText.substring(lineStartIndex, lineEndIndex)
             var limit = 0
             while (true) {
-                if (paint.measureText("${line2DrawText.substring(0, line2DrawText.length - limit)}...  $endText") <= width) {
+                if (paint.measureText("${line2DrawText.substring(0, line2DrawText.length - limit)}...  $expandText") <= width) {
                     break
                 } else {
                     limit++
@@ -88,21 +89,7 @@ class JExpandTextView @JvmOverloads constructor(
         }
         setUpSpan(drawText)
         layout = StaticLayout(ssBuilder, textPaint, width, Layout.Alignment.ALIGN_NORMAL, 1f, 5.dp2px().toFloat(), true)
-        layout!!.draw(canvas)
-        if (endText.isNotEmpty() && limnitLine in 1 until lineCount) {
-            if (limnitLine in 1..lineCount) {
-                canvas.drawText(endText, layout!!.getLineRight(limnitLine - 1), layout!!.getLineBaseline(limnitLine - 1).toFloat(), appendPaint)
-            } else {
-                canvas.drawText(endText, layout!!.getLineRight(lineCount - 1), layout!!.getLineBaseline(lineCount - 1).toFloat(), appendPaint)
-            }
-        }
-    }
-
-    override fun onClick(v: View) {
-        if (endText.isNotEmpty() && limnitLine in 1 until lineCount) {
-            limnitLine = Int.MAX_VALUE
-            requestLayout()
-        }
+        layout?.draw(canvas)
     }
 
     private fun setUpSpan(cont: CharSequence) {
@@ -117,6 +104,17 @@ class JExpandTextView @JvmOverloads constructor(
                     ssBuilder?.setSpan(it, start, if (end > cont.length) cont.length else end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                 }
             }
+        }
+        if (cont.isNotEmpty() && expandText.isNotEmpty() && limitLine in 1 until lineCount) {
+            ssBuilder?.append(expandText)
+            ssBuilder?.setSpan(JExpandSpan(context), ssBuilder!!.length - expandText.length, ssBuilder!!.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
+
+    private fun toggle() {
+        if (expandText.isNotEmpty() && limitLine in 1 until lineCount) {
+            limitLine = Int.MAX_VALUE
+            requestLayout()
         }
     }
 
@@ -134,13 +132,17 @@ class JExpandTextView @JvmOverloads constructor(
                     y += scrollY
                     val line = layout.getLineForVertical(y)
                     val off = layout.getOffsetForHorizontal(line, x.toFloat())
-                    if (off >= ssBuilder!!.length) {
+                    if (off >= ssBuilder?.length ?: 0) {
                         return super.onTouchEvent(event)
                     }
                     val link: Array<ClickableSpan> = it.getSpans(off, off, ClickableSpan::class.java)
                     if (link.isNotEmpty()) {
                         if (action == MotionEvent.ACTION_UP) {
-                            link[0].onClick(this)
+                            if (link[0] is JExpandSpan) {
+                                toggle()
+                            } else {
+                                link[0].onClick(this)
+                            }
                         } else {
                             Selection.setSelection(it,
                                     it.getSpanStart(link[0]),
